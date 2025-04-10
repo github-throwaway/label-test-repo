@@ -1,3 +1,4 @@
+# .github/workflows/auto-draft.yml
 name: Auto Draft Failed PRs
 on:
   check_suite:
@@ -6,12 +7,10 @@ on:
 jobs:
   auto-draft:
     runs-on: ubuntu-latest
-    if: failure()
-    
+    if: ${{ github.event.check_suite.conclusion == 'failure' }}
     permissions:
       pull-requests: write
       issues: write
-    
     steps:
       - name: Debug Event
         run: |
