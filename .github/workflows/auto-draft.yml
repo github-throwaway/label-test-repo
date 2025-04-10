@@ -1,4 +1,3 @@
-# .github/workflows/auto-draft.yml
 name: Auto Draft Failed PRs
 on:
   check_suite:
@@ -7,26 +6,53 @@ on:
 jobs:
   auto-draft:
     runs-on: ubuntu-latest
-    if: github.event.check_suite.conclusion == 'failure' && github.event.check_suite.pull_requests[0] != null
+    if: github.event.check_suite.conclusion == 'failure'
+    
+    permissions:
+      pull-requests: write
+      issues: write
     
     steps:
+      - name: Debug Event
+        run: |
+          echo "Check suite conclusion: ${{ github.event.check_suite.conclusion }}"
+          echo "Number of PRs: ${{ github.event.check_suite.pull_requests.length || 0 }}"
+          echo "Event payload:"
+          cat $GITHUB_EVENT_PATH
+      
       - name: Convert PR to draft
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const prNumber = context.payload.check_suite.pull_requests[0].number;
-            
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-              draft: true
-            });
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: `🚧 PR automatically converted to draft because checks failed.`
-            });
+            try {
+              const payload = context.payload;
+              
+              if (!payload.check_suite.pull_requests || payload.check_suite.pull_requests.length === 0) {
+                console.log("No pull requests found in the event payload");
+                return;
+              }
+              
+              const prNumber = payload.check_suite.pull_requests[0].number;
+              console.log(`Found PR #${prNumber}. Attempting to convert to draft...`);
+              
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                draft: true
+              });
+              
+              console.log(`Successfully converted PR #${prNumber} to draft`);
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `🚧 PR automatically converted to draft because checks failed.`
+              });
+              
+              console.log(`Added comment to PR #${prNumber}`);
+            } catch (error) {
+              console.error("Error processing PR:", error);
+            }
