@@ -2,7 +2,7 @@ name: Auto Draft Failed PRs
 
 on:
   workflow_run:
-    workflows: ["Test CI"]
+    workflows: ["Test CI"] # must exactly match your CI workflow name
     types:
       - completed
 
@@ -13,7 +13,8 @@ jobs:
 
     if: >
       github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion != 'success'
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'skipped'
 
     permissions:
       pull-requests: write
@@ -25,16 +26,25 @@ jobs:
         run: |
           PR_URL=$(jq -r '.workflow_run.pull_requests[0].url' "$GITHUB_EVENT_PATH")
           if [ "$PR_URL" == "null" ]; then
-            echo "No PR found. Exiting."
+            echo "No associated PR found. Exiting."
             exit 0
           fi
           PR_NUMBER=$(basename "$PR_URL")
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
 
-      - name: Convert PR to draft
-        run: |
-          echo "Converting PR #$PR_NUMBER to draft"
-          gh pr ready --undo "$PR_NUMBER"
-          gh pr comment "$PR_NUMBER" --body "🚧 PR automatically converted to draft because CI failed. Please fix and mark as ready again."
+      - name: Convert PR to Draft & Comment
+        if: steps.get_pr_number.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.get_pr_number.outputs.pr_number }}
+          REPO: ${{ github.repository }}
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          echo "Converting PR #$PR_NUMBER to draft..."
+          gh pr ready --undo "$PR_NUMBER" -R "$REPO"
+          echo "PR converted."
+
+          echo "Commenting..."
+          gh pr comment "$PR_NUMBER" -R "$REPO" --body "🚧 PR automatically converted to draft because the **CI checks** failed (${CONCLUSION}). See details: ${CI_RUN_URL}"
+          echo "Comment posted."
