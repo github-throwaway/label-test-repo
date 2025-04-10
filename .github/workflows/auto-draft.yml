@@ -1,0 +1,32 @@
+# .github/workflows/auto-draft.yml
+name: Auto Draft Failed PRs
+on:
+  check_suite:
+    types: [completed]
+
+jobs:
+  auto-draft:
+    runs-on: ubuntu-latest
+    if: github.event.check_suite.conclusion == 'failure' && github.event.check_suite.pull_requests[0] != null
+    
+    steps:
+      - name: Convert PR to draft
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.check_suite.pull_requests[0].number;
+            
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              draft: true
+            });
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `🚧 PR automatically converted to draft because checks failed.`
+            });
