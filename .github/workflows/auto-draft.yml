@@ -1,15 +1,19 @@
 name: Auto Draft Failed PRs
+
 on:
   workflow_run:
-    workflows: ["Test CI"]  # Must match the name from the CI workflow
+    workflows: ["Test CI"]
     types:
       - completed
 
 jobs:
   auto-draft:
+    name: Convert PR to Draft on CI Failure
     runs-on: ubuntu-latest
-    if: |
-      github.event.workflow_run.conclusion == 'failure'
+
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'success'
 
     permissions:
       pull-requests: write
@@ -17,46 +21,20 @@ jobs:
 
     steps:
       - name: Get PR Number
-        id: pr
+        id: get_pr_number
         run: |
           PR_URL=$(jq -r '.workflow_run.pull_requests[0].url' "$GITHUB_EVENT_PATH")
           if [ "$PR_URL" == "null" ]; then
-            echo "No PR associated. Exiting."
+            echo "No PR found. Exiting."
             exit 0
           fi
-          PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          PR_NUMBER=$(basename "$PR_URL")
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
 
       - name: Convert PR to draft
-        if: steps.pr.outputs.pr_number != ''
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const pr_number = Number("${{ steps.pr.outputs.pr_number }}");
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr_number
-            });
-
-            if (pr.draft) {
-              console.log(`PR #${pr_number} is already a draft.`);
-              return;
-            }
-
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr_number,
-              draft: true
-            });
-
-            console.log(`PR #${pr_number} converted to draft.`);
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr_number,
-              body: `🚧 CI failed, PR automatically converted to draft.`
-            });
+        run: |
+          echo "Converting PR #$PR_NUMBER to draft"
+          gh pr ready --undo "$PR_NUMBER"
+          gh pr comment "$PR_NUMBER" --body "🚧 PR automatically converted to draft because CI failed. Please fix and mark as ready again."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
