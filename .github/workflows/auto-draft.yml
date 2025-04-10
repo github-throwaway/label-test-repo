@@ -6,7 +6,7 @@ on:
 jobs:
   auto-draft:
     runs-on: ubuntu-latest
-    if: github.event.check_suite.conclusion == 'failure'
+    if: failure()
     
     permissions:
       pull-requests: write
